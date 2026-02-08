@@ -329,7 +329,6 @@ function nextStage(){
 
   stage++;
   render();
-  currentBet = 0;
   
   setTimeout(botTurn, 700);
   if(secondBotUnlocked) setTimeout(bot2Turn, 1200);
@@ -385,6 +384,16 @@ function botTurn(){
 
   // 4️⃣ Otherwise bet
   botBet(Math.min(1000 * botTier, botTokens));
+  
+  // strong hand → raise
+if(rank >= minRank + 1 && Math.random() < 0.4){
+  let raiseAmt = Math.min(2000 * botTier, botTokens);
+  currentBet = raiseAmt;
+  botBet(raiseAmt);
+  return;
+}
+  currentBet = 0;
+
 }
 
 
@@ -404,6 +413,15 @@ function bot2Turn(){
   }
 
   bot2Bet(Math.min(1000 * botTier, bot2Tokens));
+
+  // strong hand → raise
+if(rank >= minRank + 1 && Math.random() < 0.4){
+  let raiseAmt = Math.min(2000 * botTier, botTokens);
+  currentBet = raiseAmt;
+  botBet(raiseAmt);
+  return;
+}
+  currentBet = 0;
 }
 
 
