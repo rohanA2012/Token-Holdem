@@ -322,13 +322,15 @@ function allIn(){
 }
 
 function nextStage(){
+  if (!handActive) return;
   if(stage === 1) community.push(drawCard(),drawCard(),drawCard());
   else if(stage <= 3) community.push(drawCard());
   else return showdown();
 
   stage++;
   render();
-
+  currentBet = 0;
+  
   setTimeout(botTurn, 700);
   if(secondBotUnlocked) setTimeout(bot2Turn, 1200);
 }
@@ -353,43 +355,42 @@ function botMinRank(stage, tier){
 
 function botTurn(){
   let cards = botHand.concat(community);
-  if(cards.length >= 5){
-    let rank = bestHand(cards)[0];
-    let minRank = botMinRank(stage, botTier);
-
-    // small randomness so it isn't robotic
-    if(rank < minRank && Math.random() < 0.85){
-      status("<span class='notice'>BOT 1 FOLDS</span>");
-      endHand(true);
-      return;
-    }
+  if(cards.length < 5) {
+    botBet(Math.min(1000 * botTier, botTokens));
+    return;
   }
 
+  let rank = bestHand(cards)[0];
+  let minRank = botMinRank(stage, botTier);
+
+  // 1️⃣ Fold FIRST based on hand strength
+  if(rank < minRank && Math.random() < 0.85){
+    status("<span class='notice'>BOT 1 FOLDS</span>");
+    endHand(true);
+    return;
+  }
+
+  // 2️⃣ Then check if it can afford the bet
+  if (currentBet > 0 && botTokens < currentBet) {
+    status("<span class='notice'>BOT 1 FOLDS</span>");
+    endHand(true);
+    return;
+  }
+
+  // 3️⃣ Then call
+  if (currentBet > 0) {
+    botBet(currentBet);
+    return;
+  }
+
+  // 4️⃣ Otherwise bet
   botBet(Math.min(1000 * botTier, botTokens));
 }
 
-// after bestHand() and compareHands()
-
-function botMinRank(stage, tier){
-  if(tier === 1){
-    if(stage === 1) return 2; // pair
-    if(stage === 2) return 3; // two pair
-    return 4;                // trips+
-  }
-  if(tier === 2){
-    if(stage === 1) return 2;
-    if(stage === 2) return 4;
-    return 5;                // straight+
-  }
-  if(tier === 3){
-    if(stage === 1) return 3;
-    if(stage === 2) return 5;
-    return 6;                // flush+
-  }
-}
 
 function bot2Turn(){
   let cards = bot2Hand.concat(community);
+
   if(cards.length >= 5){
     let rank = bestHand(cards)[0];
     let minRank = botMinRank(stage, botTier);
@@ -397,6 +398,7 @@ function bot2Turn(){
     // looser than bot 1
     if(rank < minRank && Math.random() < 0.65){
       status("<span class='notice'>BOT 2 FOLDS</span>");
+      endHand(true);
       return;
     }
   }
@@ -404,10 +406,32 @@ function bot2Turn(){
   bot2Bet(Math.min(1000 * botTier, bot2Tokens));
 }
 
+
 function showdown(){
   render(true);
-  status("<span class='notice'>Showdown</span>");
-  endHand(true);
+
+  let playerRank = bestHand(playerHand.concat(community));
+  let botRank = bestHand(botHand.concat(community));
+
+  let result = compareHands(playerRank, botRank);
+
+  if (result > 0){
+    status("<span class='notice'>YOU WIN!</span>");
+    endHand(true);
+  }
+  else if (result < 0){
+    status("<span class='notice'>YOU LOSE</span>");
+    endHand(false);
+  }
+  else{
+    status("<span class='notice'>SPLIT POT</span>");
+    tokens += pot / 2;
+    botTokens += pot / 2;
+    pot = 0;
+    refresh();
+    disableActions();
+    handActive = false;
+  }
 }
 
 function endHand(win){
