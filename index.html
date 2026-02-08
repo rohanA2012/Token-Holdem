@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Token Hold'em</title>
+<style>
+body {
+  background:#0e3b2e;
+  color:white;
+  font-family:Arial;
+  text-align:center;
+}
+.panel {
+  background:#145a32;
+  border-radius:16px;
+  padding:20px;
+  width:560px;
+  margin:auto;
+}
+.card {
+  display:inline-block;
+  background:white;
+  color:black;
+  padding:8px;
+  margin:4px;
+  border-radius:6px;
+  width:42px;
+}
+.hidden { background:#333; color:#333; }
+button {
+  padding:8px 12px;
+  margin:5px;
+  border-radius:6px;
+}
+button:disabled {
+  opacity:0.35;
+  cursor:not-allowed;
+}
+.shop {
+  background:#1e8449;
+  padding:12px;
+  border-radius:12px;
+  margin-top:15px;
+}
+.locked {
+  background:#555;
+}
+.notice {
+  color:#ffd700;
+  font-weight:bold;
+}
+</style>
+</head>
+
+<body>
+
+<h1>♠️♣️ Token Hold'em ♥️♦️</h1>
+
+<h3>
+Points: <span id="points">50000</span> |
+Your Tokens: <span id="tokens">0</span> |
+Bot 1 Tokens: <span id="botTokens">0</span> |
+Bot 2 Tokens: <span id="bot2Tokens">-</span> |
+Pot: <span id="pot">0</span>
+</h3>
+
+<div class="panel">
+
+<div id="status">Buy tokens to start</div>
+
+<h4>Your Hand</h4>
+<div id="player"></div>
+
+<h4>Community</h4>
+<div id="community"></div>
+
+<h4>Bot 1</h4>
+<div id="bot"></div>
+
+<h4>Bot 2</h4>
+<div id="bot2"></div>
+
+<div id="actions">
+  <button id="foldBtn" onclick="fold()">Fold</button>
+  <button id="callBtn" onclick="call()">Call</button>
+  <button id="raiseBtn" onclick="showRaise()">Raise</button>
+</div>
+
+<div id="raiseBox"></div>
+
+<br>
+<button onclick="startHand()">Start Hand</button>
+<button onclick="cashOut()">Cash Out</button>
+
+<div class="shop">
+<h3>Shop</h3>
+
+<button onclick="buyTokens(10000,10000)">Buy 10k Tokens (10k pts)</button>
+<button onclick="buyTokens(25000,25000)">Buy 25k Tokens (25k pts)</button>
+
+<br><br>
+
+<button id="bot2Btn" onclick="unlockBot(2,150000)">Bot Tier 2 (150k pts)</button>
+<button id="bot3Btn" onclick="unlockBot(3,400000)">Bot Tier 3 (400k pts)</button>
+
+<br><br>
+
+<button id="secondBotBtn" onclick="unlockSecondBot()">Second Bot Slot (300k pts)</button>
+</div>
+
+</div>
+
+<script>
+/* ===== STATE ===== */
+let points = 50000;
+let tokens = 0;
+let pot = 0;
+
+let botTokens = 0;
+let bot2Tokens = 0;
+
+let stage = 0;
+let currentBet = 1000;
+let handActive = false;
+
+let botTier = 1;
+let secondBotUnlocked = false;
+
+let playerHand = [];
+let botHand = [];
+let bot2Hand = [];
+let community = [];
+
+const suits = ["♠","♥","♦","♣"];
+const values = [2,3,4,5,6,7,8,9,10,"J","Q","K","A"];
+
+/* ===== DECK ===== */
+let deck = [];
+
+function buildDeck(){
+  deck = [];
+  for (let s of suits){
+    for (let v of values){
+      deck.push(v + s);
+    }
+  }
+}
+
+function drawCard(){
+  return deck.splice(Math.floor(Math.random() * deck.length), 1)[0];
+}
+
+/* ===== UI ===== */
+function status(msg){
+  statusEl.innerHTML = msg;
+}
+
+function refresh(){
+  pointsEl.textContent = points;
+  tokensEl.textContent = tokens;
+  botTokensEl.textContent = botTokens;
+  bot2TokensEl.textContent = secondBotUnlocked ? bot2Tokens : "-";
+  potEl.textContent = pot;
+  updateShop();
+}
+
+function render(reveal=false){
+  player.innerHTML = playerHand.map(c=>`<span class="card">${c}</span>`).join("");
+  communityDiv.innerHTML = community.map(c=>`<span class="card">${c}</span>`).join("");
+
+  bot.innerHTML = reveal
+    ? botHand.map(c=>`<span class="card">${c}</span>`).join("")
+    : `<span class="card hidden">??</span><span class="card hidden">??</span>`;
+
+  bot2.innerHTML = secondBotUnlocked
+    ? (reveal
+        ? bot2Hand.map(c=>`<span class="card">${c}</span>`).join("")
+        : `<span class="card hidden">??</span><span class="card hidden">??</span>`)
+    : "";
+}
+
+function disableActions(){
+  foldBtn.disabled = true;
+  callBtn.disabled = true;
+  raiseBtn.disabled = true;
+}
+
+function enableActions(){
+  foldBtn.disabled = false;
+  callBtn.disabled = false;
+  raiseBtn.disabled = false;
+}
+
+/* ===== SHOP ===== */
+function updateShop(){
+  bot2Btn.disabled = botTier !== 1 || points < 150000;
+  bot3Btn.disabled = botTier !== 2 || points < 400000;
+  secondBotBtn.disabled = points < 300000 || secondBotUnlocked;
+
+  [bot2Btn, bot3Btn, secondBotBtn].forEach(b=>{
+    b.classList.toggle("locked", b.disabled);
+  });
+}
+
+function buyTokens(amount, cost){
+  if(points < cost) return;
+  points -= cost;
+  tokens += amount;
+  status(`Bought ${amount} tokens`);
+  refresh();
+}
+
+function unlockBot(tier, cost){
+  // must unlock tiers in order
+  if(tier !== botTier + 1) return;
+
+  if(points < cost) return;
+
+  botTier = tier;
+  points -= cost;
+  status(`Bot Tier ${tier} unlocked`);
+  refresh();
+}
+
+function unlockSecondBot(){
+  if(points < 300000 || secondBotUnlocked) return;
+  secondBotUnlocked = true;
+  points -= 300000;
+  status("Second bot unlocked");
+  refresh();
+}
+
+/* ===== BETTING ===== */
+function bet(amount){
+  amount = Math.min(amount, tokens);
+  tokens -= amount;
+  pot += amount;
+  refresh();
+}
+
+function botBet(amount){
+  amount = Math.min(amount, botTokens);
+  botTokens -= amount;
+  pot += amount;
+  status(`Bot 1 bets ${amount}`);
+  refresh();
+}
+
+function bot2Bet(amount){
+  amount = Math.min(amount, bot2Tokens);
+  bot2Tokens -= amount;
+  pot += amount;
+  status(`Bot 2 bets ${amount}`);
+  refresh();
+}
+
+/* ===== GAME FLOW ===== */
+function startHand(){
+  if(tokens < 2000) return status("Not enough tokens");
+
+  buildDeck();
+
+  pot = 0;
+  stage = 1;
+  handActive = true;
+  currentBet = 1000;
+
+  botTokens = tokens;
+  if(secondBotUnlocked) bot2Tokens = tokens;
+
+  playerHand = [drawCard(), drawCard()];
+  botHand = [drawCard(), drawCard()];
+  if(secondBotUnlocked) bot2Hand = [drawCard(), drawCard()];
+  community = [];
+
+  bet(1000);
+  botBet(1000);
+  if(secondBotUnlocked) bot2Bet(1000);
+
+  enableActions();
+  render();
+  status("Pre-Flop");
+}
+
+function fold(){
+  if(!handActive) return;
+  status("<span class='notice'>You folded</span>");
+  endHand(false);
+}
+
+function call(){
+  bet(currentBet);
+  nextStage();
+}
+
+function showRaise(){
+  raiseBox.innerHTML = `
+    <button onclick="raisePct(0.25)">+25%</button>
+    <button onclick="raisePct(0.5)">+50%</button>
+    <button onclick="allIn()">All-In</button>
+    <button onclick="cancelRaise()">Cancel</button>
+  `;
+}
+
+function cancelRaise(){ raiseBox.innerHTML=""; }
+
+function raisePct(p){
+  let amt = Math.floor(tokens * p);
+  if(amt <= 0) return;
+  currentBet = amt;
+  bet(amt);
+  cancelRaise();
+  nextStage();
+}
+
+function allIn(){
+  if(tokens <= 0) return;
+  currentBet = tokens;
+  bet(tokens);
+  cancelRaise();
+  nextStage();
+}
+
+function nextStage(){
+  if(stage === 1) community.push(drawCard(),drawCard(),drawCard());
+  else if(stage <= 3) community.push(drawCard());
+  else return showdown();
+
+  stage++;
+  render();
+
+  setTimeout(botTurn, 700);
+  if(secondBotUnlocked) setTimeout(bot2Turn, 1200);
+}
+
+function botMinRank(stage, tier){
+  if(tier === 1){
+    if(stage === 1) return 2; // pair
+    if(stage === 2) return 3; // two pair
+    return 4;                // trips+
+  }
+  if(tier === 2){
+    if(stage === 1) return 2;
+    if(stage === 2) return 4;
+    return 5;                // straight+
+  }
+  if(tier === 3){
+    if(stage === 1) return 3;
+    if(stage === 2) return 5;
+    return 6;                // flush+
+  }
+}
+
+function botTurn(){
+  let cards = botHand.concat(community);
+  if(cards.length >= 5){
+    let rank = bestHand(cards)[0];
+    let minRank = botMinRank(stage, botTier);
+
+    // small randomness so it isn't robotic
+    if(rank < minRank && Math.random() < 0.85){
+      status("<span class='notice'>BOT 1 FOLDS</span>");
+      endHand(true);
+      return;
+    }
+  }
+
+  botBet(Math.min(1000 * botTier, botTokens));
+}
+
+// after bestHand() and compareHands()
+
+function botMinRank(stage, tier){
+  if(tier === 1){
+    if(stage === 1) return 2; // pair
+    if(stage === 2) return 3; // two pair
+    return 4;                // trips+
+  }
+  if(tier === 2){
+    if(stage === 1) return 2;
+    if(stage === 2) return 4;
+    return 5;                // straight+
+  }
+  if(tier === 3){
+    if(stage === 1) return 3;
+    if(stage === 2) return 5;
+    return 6;                // flush+
+  }
+}
+
+function bot2Turn(){
+  let cards = bot2Hand.concat(community);
+  if(cards.length >= 5){
+    let rank = bestHand(cards)[0];
+    let minRank = botMinRank(stage, botTier);
+
+    // looser than bot 1
+    if(rank < minRank && Math.random() < 0.65){
+      status("<span class='notice'>BOT 2 FOLDS</span>");
+      return;
+    }
+  }
+
+  bot2Bet(Math.min(1000 * botTier, bot2Tokens));
+}
+
+function showdown(){
+  render(true);
+  status("<span class='notice'>Showdown</span>");
+  endHand(true);
+}
+
+function endHand(win){
+  handActive = false;
+  disableActions();
+  if(win) tokens += pot;
+  pot = 0;
+  refresh();
+}
+
+/* ===== CASH OUT ===== */
+function cashOut(){
+  if(tokens <= 0) return;
+  points += tokens;
+  tokens = 0;
+  refresh();
+  status("Tokens cashed out");
+}
+
+/* ===== DOM ===== */
+const pointsEl = document.getElementById("points");
+const tokensEl = document.getElementById("tokens");
+const botTokensEl = document.getElementById("botTokens");
+const bot2TokensEl = document.getElementById("bot2Tokens");
+const potEl = document.getElementById("pot");
+const statusEl = document.getElementById("status");
+
+const player = document.getElementById("player");
+const bot = document.getElementById("bot");
+const bot2 = document.getElementById("bot2");
+const communityDiv = document.getElementById("community");
+const raiseBox = document.getElementById("raiseBox");
+
+const foldBtn = document.getElementById("foldBtn");
+const callBtn = document.getElementById("callBtn");
+const raiseBtn = document.getElementById("raiseBtn");
+
+const bot2Btn = document.getElementById("bot2Btn");
+const bot3Btn = document.getElementById("bot3Btn");
+const secondBotBtn = document.getElementById("secondBotBtn");
+
+refresh();
+disableActions();
+</script>
+</body>
+</html>
